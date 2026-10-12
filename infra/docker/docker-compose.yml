@@ -1,0 +1,53 @@
+# ==============================================================================
+# SyncForge Local Development Infrastructure
+# Docker Compose for PostgreSQL 16 and Redis 7 with healthchecks & volumes
+# ==============================================================================
+# Usage:
+#   npm run infra:up    -> Starts services in background
+#   npm run infra:down  -> Stops and removes containers
+#   npm run infra:logs  -> Streams container logs
+# ==============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: syncforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-syncforge_dev}
+    ports:
+      # Exposes port 5432 on localhost (accessible to Windows host)
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - syncforge_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d syncforge_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: syncforge-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      # Exposes port 6379 on localhost (accessible to Windows host)
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - syncforge_redisdata:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli ping || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  syncforge_pgdata:
+    name: syncforge_pgdata
+  syncforge_redisdata:
+    name: syncforge_redisdata

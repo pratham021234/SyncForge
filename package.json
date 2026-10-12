@@ -1,0 +1,47 @@
+{
+  "name": "syncforge-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SyncForge: Real-time collaboration infrastructure for developers",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -p \"[{name}]\" -n \"server,web\" -c \"cyan,green\" \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "npm run dev --workspace=@syncforge/server",
+    "dev:web": "npm run dev --workspace=@syncforge/web",
+    "build": "npm run build:packages && npm run build:server && npm run build:web",
+    "build:packages": "npm run build --workspace=@syncforge/shared && npm run build --workspace=@syncforge/sdk",
+    "build:server": "npm run build --workspace=@syncforge/server",
+    "build:web": "npm run build --workspace=@syncforge/web",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspace=@syncforge/shared && npm run typecheck --workspace=@syncforge/sdk && npm run typecheck --workspace=@syncforge/server && npm run typecheck --workspace=@syncforge/web",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "infra:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "infra:logs": "docker compose -f infra/docker/docker-compose.yml logs -f",
+    "db:migrate": "npm run db:migrate --workspace=@syncforge/server",
+    "db:status": "npm run db:status --workspace=@syncforge/server",
+    "health:check": "node scripts/health-check.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.1",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
