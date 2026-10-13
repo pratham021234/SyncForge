@@ -54,11 +54,11 @@ export class HealthService {
       protocolVersion: SYNCFORGE_PROTOCOL_VERSION,
       environment: env.NODE_ENV,
       capabilities: {
-        websockets: 'planned_phase_1',
-        yjsSynchronization: 'planned_phase_1',
+        websockets: 'active',
+        yjsSynchronization: 'active',
         presence: 'planned_phase_2',
         collaborativeCanvas: 'planned_phase_2',
-        databasePersistence: 'configured',
+        databasePersistence: 'active',
         redisCoordination: 'configured',
       },
       endpoints: {

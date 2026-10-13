@@ -4,59 +4,83 @@ This document establishes the security baseline for SyncForge, details implement
 
 ---
 
-## 1. Implemented Security Controls (Phase 0)
+## 1. Implemented Security Controls
 
 ### 1.1 Strict Input Validation
 
 - All untrusted input boundaries (HTTP request payloads, query parameters, room identifiers, presence payloads) are validated using strict Zod schemas in `@syncforge/shared`.
 - Room identifiers are constrained by `ROOM_ID_REGEX` (`/^[a-zA-Z0-9_-]{3,64}$/`) preventing path traversal, injection, or formatting exploits.
+- WebSocket wire messages are checked against discriminated union schemas before any internal routing or CRDT processing.
 
-### 1.2 Explicit CORS Policies
+### 1.2 WebSocket Transport Controls (Implemented Phase 1)
+
+- **Origin Validation:** WebSocket upgrade requests validate the `Origin` header against the configured CORS allowlist (`CORS_ORIGIN`). Connections from unauthorized origins are rejected immediately.
+- **Message Rate Limiting:** Each active WebSocket connection is protected by a dedicated rate limiter enforcing a maximum message frequency (default: 100 messages/second). Flooding triggers error code `RATE_LIMIT_EXCEEDED` and connection closure with code `4005`.
+- **Max Payload Size Enforcement:** Incoming message frames are bounded to a maximum size of 64KB (`MAX_MESSAGE_BYTES = 65536`). Oversized frames are rejected with close code `4006`.
+- **Binary CRDT Validation:** Binary Yjs byte diffs received from clients are validated before ingestion. If decoding or applying an update throws an exception, the error is isolated, logged, and surfaced without compromising process stability.
+- **Heartbeat & Zombie Sockets:** The gateway tracks active pings and pongs to eliminate half-open zombie TCP sockets. Unresponsive sockets are safely evicted after a 30-second window.
+
+### 1.3 Tenant & Room Data Isolation
+
+- Connections and updates are strictly isolated to the specified `roomId`.
+- The broadcast mechanism uses explicit room peer filters, ensuring updates are never transmitted across room boundaries or echoed back to the originating sender.
+- Database queries and persistence writes strictly parameterize `room_id` and raw byte arrays (`BYTEA`) via parameterized queries (`$1, $2, $3`), fully preventing SQL injection.
+
+### 1.4 Explicit CORS Policies
 
 - Fastify server configures `@fastify/cors` with an explicit origin allowlist derived from `CORS_ORIGIN`.
 - Wildcard origins (`*`) are disallowed by default in production configurations.
 
-### 1.3 Request Throttling & Resource Limits
-
-- Request body sizes are capped at 1MB (`REQUEST_BODY_LIMIT_BYTES = 1048576`) to prevent memory exhaustion and buffer bloat attacks.
-- Server connection timeouts are enforced (`REQUEST_TIMEOUT_MS = 15000`) to mitigate slowloris connection starvation.
-
-### 1.4 Structured Logging & Secret Redaction
+### 1.5 Structured Logging & Secret Redaction
 
 - Fastify Pino logger is configured with redaction paths:
   - `req.headers.authorization`
   - `req.headers.cookie`
   - `body.password`
   - `body.apiKey`
-- Stack traces and internal database connection errors are hidden from API responses in production (`NODE_ENV=production`).
+  - Query parameters containing credentials or tokens.
+- Internal database connection errors and stack traces are suppressed in production environments (`NODE_ENV=production`).
 
-### 1.5 Container Security
+### 1.6 Container Security
 
 - Production Docker images for `apps/server` and `apps/web` run under unprivileged non-root users (`USER node` and `USER nextjs`).
 - Secrets and `.env` files are excluded from image contexts via `.dockerignore`.
+
+### 1.7 Collaborative Canvas & Ephemeral Presence Controls (Implemented Phase 2)
+
+- **Canvas Schema Validation:** Nodes and edges added to the collaborative canvas are strictly validated via `CanvasNodeSchema` and `CanvasEdgeSchema`. Non-finite coordinates, invalid node types, and oversized text bodies are rejected before mutating the CRDT document.
+- **Transient State Isolation:** Real-time cursor coordinates and presence indicators are routed strictly through ephemeral in-memory awareness channels. Cursor movements are never written to durable PostgreSQL storage, preventing storage bloat and write amplification attacks.
+- **Throttling & Frame Caps:** Cursor broadcasts are rate-throttled on the client (50ms interval) and bounded by the server gateway's frame size (64KB) and per-socket rate limit (100 messages/sec).
+- **Identity Boundaries:** Local development identities are generated with random development prefixes (`dev_usr_`) and clearly isolated from authenticated tenant project IDs.
+
+### 1.8 Production SDK & Token Lifecycle Security (Implemented Phase 3)
+
+- **Dynamic Token Acquisition (`getToken`):** The SDK supports dynamic asynchronous token callbacks, allowing client applications to fetch short-lived session tokens from backend authentication endpoints on-demand without hardcoding or embedding long-lived secrets in browser bundles.
+- **Safe Reconnection Throttling:** Reconnection retries are strictly bounded by exponential backoff with random jitter. Critical authentication rejections (`UNAUTHENTICATED` / HTTP 401 / code 4001) or permission denials (`UNAUTHORIZED` / HTTP 403 / code 4003) immediately halt retries, preventing client-side denial-of-service loops against backend auth providers.
+- **Distribution Boundary Isolation:** The SDK's published manifest is explicitly constrained to `dist/`, `README.md`, `CHANGELOG.md`, and `LICENSE`. All local `.env` files, credentials, internal test fixtures, and monorepo source files are blocked from packaging.
 
 ---
 
 ## 2. Threat Assumptions & Boundaries
 
-| Threat Scenario                       | Risk Level | Architectural Mitigation                                                                   |
+| Threat Scenario                       | Risk Level | Implemented Architectural Mitigation                                                       |
 | :------------------------------------ | :--------- | :----------------------------------------------------------------------------------------- |
-| **Malicious CRDT Injections**         | High       | Binary Yjs updates will be decoded and verified for valid struct trees before propagation. |
-| **Room Flooding / Denial of Service** | High       | Redis-backed token bucket rate limiters per IP / API key (Planned Phase 5).                |
-| **Cross-Tenant Data Leakage**         | Critical   | Every database query scopes records strictly by `project_id`.                              |
-| **Stale / Zombie Connections**        | Medium     | Periodic WebSocket heartbeats with aggressive disconnection after timeout.                 |
+| **Malicious CRDT Injections**         | High       | Binary updates decoded in try/catch blocks; schema rejects non-base64 payloads.            |
+| **Room Flooding / Denial of Service** | High       | Per-connection rate limiter (100 msgs/sec) + 64KB frame size bounds with immediate drop.   |
+| **Cross-Tenant Data Leakage**         | Critical   | Strict room session mapping; database queries strictly scoped by `room_id` & `project_id`. |
+| **Stale / Zombie Connections**        | Medium     | Periodic WebSocket heartbeats with 30s timeout and automatic session eviction.             |
+| **Connection Eavesdropping**          | High       | TLS required for production deployments (`wss://` and `https://`).                         |
 
 ---
 
-## 3. Known Foundational Gaps & Limitations (Phase 0)
+## 3. Known Limitations & Roadmap Controls
 
-1. **Authentication Not Yet Enforced on WebSocket Gateway:**
-   - In Phase 0, the server provides foundational HTTP `/healthz`, `/readyz`, and `/api/v1/info` endpoints.
-   - Protected collaboration endpoints are NOT yet open to the public; mock authentication has NOT been fabricated.
-2. **Key Hashing in Migrations:**
-   - The database schema introduces the `api_keys` table with `key_hash VARCHAR(64)`. The key generation and verification routines will be implemented in Phase 4.
-3. **Audit Logging:**
-   - Operational security audit logging for administrative actions will be established alongside the developer console in Phase 4.
+1. **Production Token Cryptography (Targeted Phase 4):**
+   - Phase 1 implements token extraction and validation via `AuthService`. Cryptographic public key verification and self-serve dashboard key revocation are scheduled for Phase 4.
+2. **Distributed Redis Rate Limiting (Targeted Phase 3):**
+   - Current rate limiting is tracked per server instance in memory. Cluster-wide distributed sliding window limiting via Redis will be introduced in Phase 3.
+3. **Audit Logging (Targeted Phase 4):**
+   - Administrative auditing for workspace changes and key generation will accompany the Phase 4 developer dashboard.
 
 ---
 
@@ -76,5 +100,5 @@ Before deploying SyncForge to production environments:
 - [ ] Replace default `AUTH_SECRET` with a cryptographically generated 256-bit secret.
 - [ ] Configure TLS (HTTPS and WSS) terminating reverse proxy (Caddy / Nginx / Cloudflare).
 - [ ] Restrict `CORS_ORIGIN` to verified production frontend domains.
-- [ ] Verify rate limiting on all public endpoints.
-- [ ] Perform penetration testing on binary WebSocket message handlers.
+- [ ] Verify rate limiting on both HTTP and WebSocket endpoints.
+- [ ] Ensure PostgreSQL database user has restricted privileges (no superuser access).

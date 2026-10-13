@@ -32,12 +32,32 @@ export class ConnectionError extends SyncForgeError {
 }
 
 /**
- * Thrown when client authentication or authorization fails.
+ * Thrown when client authentication fails (invalid or expired credentials).
  */
 export class AuthenticationError extends SyncForgeError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'UNAUTHORIZED', details);
     this.name = 'AuthenticationError';
+  }
+}
+
+/**
+ * Thrown when client authorization fails (insufficient permissions for room/action).
+ */
+export class AuthorizationError extends SyncForgeError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'FORBIDDEN', details);
+    this.name = 'AuthorizationError';
+  }
+}
+
+/**
+ * Thrown when invalid configuration options are provided.
+ */
+export class ConfigurationError extends SyncForgeError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'INVALID_PAYLOAD', details);
+    this.name = 'ConfigurationError';
   }
 }
 

@@ -26,7 +26,7 @@ export function Navbar() {
             <span className="text-white font-bold">SyncForge</span>
           </Link>
           <span className="hidden sm:inline-flex items-center rounded-full bg-cyan-950/60 px-2.5 py-0.5 text-xs font-medium text-cyan-400 border border-cyan-800/40">
-            Phase 0 Foundation
+            Phase 2 Live Canvas
           </span>
         </div>
 

@@ -1,13 +1,32 @@
 import fastify, { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import websocket from '@fastify/websocket';
 import crypto from 'crypto';
 import { env } from './config/env.js';
 import { healthRoutes } from './routes/health.js';
 import { infoRoutes } from './routes/api/v1/info.js';
 import { AppError } from './errors/app-error.js';
+import { RoomManager } from './engine/room-manager.js';
+import { PersistenceService } from './services/persistence.service.js';
+import { AuthService } from './services/auth.service.js';
+import { registerCollaborationGateway, WebSocketSession } from './gateway/collaboration.gateway.js';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    roomManager: RoomManager;
+    persistenceService: PersistenceService;
+    gateway: {
+      sessions: Map<string, WebSocketSession>;
+      broadcastShutdown: () => void;
+    };
+  }
+}
 
 export interface BuildAppOptions {
   fastifyOptions?: FastifyServerOptions;
+  persistenceService?: PersistenceService;
+  roomManager?: RoomManager;
+  authService?: AuthService;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -37,6 +56,26 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ...options.fastifyOptions,
   });
 
+  // Register WebSocket plugin
+  app.register(websocket, {
+    options: {
+      maxPayload: env.REQUEST_BODY_LIMIT_BYTES,
+    },
+  });
+
+  // Initialize collaboration services
+  const persistenceService = options.persistenceService ?? new PersistenceService();
+  const roomManager = options.roomManager ?? new RoomManager(persistenceService);
+  const authService = options.authService ?? new AuthService();
+
+  // Register collaboration WebSocket gateway
+  const gateway = registerCollaborationGateway(app, roomManager, authService);
+
+  // Attach services to Fastify instance
+  app.decorate('roomManager', roomManager);
+  app.decorate('persistenceService', persistenceService);
+  app.decorate('gateway', gateway);
+
   // CORS configuration
   const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim());
   app.register(cors, {
@@ -45,7 +84,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       if (!origin) {
         return cb(null, true);
       }
-      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      if (
+        env.NODE_ENV === 'test' ||
+        allowedOrigins.includes('*') ||
+        allowedOrigins.includes(origin) ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.startsWith('http://localhost:')
+      ) {
         return cb(null, true);
       }
       return cb(new Error(`Origin ${origin} not allowed by CORS policy`), false);

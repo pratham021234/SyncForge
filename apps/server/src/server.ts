@@ -10,15 +10,27 @@ async function startServer(): Promise<void> {
     app.log.info({ signal }, 'Graceful shutdown initiated...');
 
     try {
-      // 1. Stop receiving new HTTP / WebSocket connections
+      // 1. Broadcast shutdown notification to connected WebSocket sessions
+      if (app.gateway) {
+        app.gateway.broadcastShutdown();
+        app.log.info('WebSocket sessions notified of shutdown.');
+      }
+
+      // 2. Drain all in-flight persistence operations and destroy rooms
+      if (app.roomManager) {
+        await app.roomManager.shutdown();
+        app.log.info('RoomManager persistence drained and active rooms destroyed.');
+      }
+
+      // 3. Stop receiving new HTTP / WebSocket connections
       await app.close();
       app.log.info('Fastify server closed.');
 
-      // 2. Close database pool
+      // 4. Close database pool
       await closeDatabasePool();
       app.log.info('PostgreSQL connection pool closed.');
 
-      // 3. Close Redis connection
+      // 5. Close Redis connection
       await closeRedisClient();
       app.log.info('Redis connection closed.');
 

@@ -20,6 +20,13 @@ export const RoomIdSchema = z
   );
 
 /**
+ * Base64 Payload Schema (constrained to 5MB max binary size to prevent memory bloat)
+ */
+export const Base64PayloadSchema = z
+  .string()
+  .max(7 * 1024 * 1024, 'Binary payload exceeds 5MB size limit');
+
+/**
  * User Presence Schema
  */
 export const UserPresenceSchema = z.object({
@@ -39,71 +46,133 @@ export const UserPresenceSchema = z.object({
   lastActive: z.number().int().positive(),
 });
 
-/**
- * Client Handshake Message Schema
- */
-export const ClientHelloSchema = z.object({
-  type: z.literal('hello'),
+// -----------------------------------------------------------------------------
+// Client -> Server Messages
+// -----------------------------------------------------------------------------
+
+export const ClientInitSchema = z.object({
+  type: z.literal('init'),
   protocolVersion: z.literal(SYNCFORGE_PROTOCOL_VERSION),
   clientId: z.string().min(1).max(128),
   token: z.string().optional(),
 });
 
-/**
- * Join Room Request Schema
- */
 export const ClientJoinRoomSchema = z.object({
   type: z.literal('join_room'),
   roomId: RoomIdSchema,
-  initialPresence: UserPresenceSchema.omit({ lastActive: true }).optional(),
+  stateVector: Base64PayloadSchema.optional(),
 });
 
-/**
- * Leave Room Request Schema
- */
 export const ClientLeaveRoomSchema = z.object({
   type: z.literal('leave_room'),
   roomId: RoomIdSchema,
 });
 
-/**
- * Client Ping Message Schema
- */
+export const ClientSyncStep1Schema = z.object({
+  type: z.literal('sync_step1'),
+  roomId: RoomIdSchema,
+  stateVector: Base64PayloadSchema,
+});
+
+export const ClientSyncStep2Schema = z.object({
+  type: z.literal('sync_step2'),
+  roomId: RoomIdSchema,
+  update: Base64PayloadSchema,
+});
+
+export const ClientDocUpdateSchema = z.object({
+  type: z.literal('doc_update'),
+  roomId: RoomIdSchema,
+  update: Base64PayloadSchema,
+  messageId: z.string().optional(),
+});
+
+export const ClientAwarenessSchema = z.object({
+  type: z.literal('awareness'),
+  roomId: RoomIdSchema,
+  awarenessUpdate: Base64PayloadSchema,
+});
+
 export const ClientPingSchema = z.object({
   type: z.literal('ping'),
   timestamp: z.number().int().positive(),
 });
 
-/**
- * Discriminated Union of Client to Server Messages
- */
 export const ClientMessageSchema = z.discriminatedUnion('type', [
-  ClientHelloSchema,
+  ClientInitSchema,
   ClientJoinRoomSchema,
   ClientLeaveRoomSchema,
+  ClientSyncStep1Schema,
+  ClientSyncStep2Schema,
+  ClientDocUpdateSchema,
+  ClientAwarenessSchema,
   ClientPingSchema,
 ]);
 
-/**
- * Server Pong Message Schema
- */
-export const ServerPongSchema = z.object({
-  type: z.literal('pong'),
-  timestamp: z.number().int().positive(),
+// -----------------------------------------------------------------------------
+// Server -> Client Messages
+// -----------------------------------------------------------------------------
+
+export const ServerInitAckSchema = z.object({
+  type: z.literal('init_ack'),
+  protocolVersion: z.literal(SYNCFORGE_PROTOCOL_VERSION),
+  connectionId: z.string().min(1),
+  authenticated: z.boolean(),
+  userId: z.string(),
+  serverTime: z.number().int().positive(),
 });
 
-/**
- * Server Room Joined Schema
- */
 export const ServerRoomJoinedSchema = z.object({
   type: z.literal('room_joined'),
   roomId: RoomIdSchema,
-  peers: z.array(UserPresenceSchema),
+  readOnly: z.boolean(),
+  serverStateVector: Base64PayloadSchema.optional(),
 });
 
-/**
- * Server Error Schema
- */
+export const ServerRoomRejectedSchema = z.object({
+  type: z.literal('room_rejected'),
+  roomId: RoomIdSchema,
+  reason: z.string(),
+  code: z.nativeEnum(SYNCFORGE_ERROR_CODES),
+});
+
+export const ServerSyncStep1Schema = z.object({
+  type: z.literal('sync_step1'),
+  roomId: RoomIdSchema,
+  stateVector: Base64PayloadSchema,
+});
+
+export const ServerSyncStep2Schema = z.object({
+  type: z.literal('sync_step2'),
+  roomId: RoomIdSchema,
+  update: Base64PayloadSchema,
+});
+
+export const ServerDocUpdateSchema = z.object({
+  type: z.literal('doc_update'),
+  roomId: RoomIdSchema,
+  update: Base64PayloadSchema,
+});
+
+export const ServerDocUpdateAckSchema = z.object({
+  type: z.literal('doc_update_ack'),
+  roomId: RoomIdSchema,
+  messageId: z.string(),
+  persisted: z.boolean(),
+  error: z.string().optional(),
+});
+
+export const ServerAwarenessSchema = z.object({
+  type: z.literal('awareness'),
+  roomId: RoomIdSchema,
+  awarenessUpdate: Base64PayloadSchema,
+});
+
+export const ServerRoomLeftSchema = z.object({
+  type: z.literal('room_left'),
+  roomId: RoomIdSchema,
+});
+
 export const ServerErrorSchema = z.object({
   type: z.literal('error'),
   code: z.nativeEnum(SYNCFORGE_ERROR_CODES),
@@ -112,11 +181,28 @@ export const ServerErrorSchema = z.object({
   timestamp: z.string(),
 });
 
-/**
- * Discriminated Union of Server to Client Messages
- */
+export const ServerShutdownSchema = z.object({
+  type: z.literal('server_shutdown'),
+  reason: z.string(),
+  reconnectDelayMs: z.number().int().positive(),
+});
+
+export const ServerPongSchema = z.object({
+  type: z.literal('pong'),
+  timestamp: z.number().int().positive(),
+});
+
 export const ServerMessageSchema = z.discriminatedUnion('type', [
-  ServerPongSchema,
+  ServerInitAckSchema,
   ServerRoomJoinedSchema,
+  ServerRoomRejectedSchema,
+  ServerSyncStep1Schema,
+  ServerSyncStep2Schema,
+  ServerDocUpdateSchema,
+  ServerDocUpdateAckSchema,
+  ServerAwarenessSchema,
+  ServerRoomLeftSchema,
   ServerErrorSchema,
+  ServerShutdownSchema,
+  ServerPongSchema,
 ]);

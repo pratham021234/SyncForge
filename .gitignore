@@ -19,6 +19,7 @@ build/
 out/
 coverage/
 *.tsbuildinfo
+*.tgz
 
 # Logs
 npm-debug.log*

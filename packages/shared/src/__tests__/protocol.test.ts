@@ -3,8 +3,31 @@ import {
   RoomIdSchema,
   UserPresenceSchema,
   ClientMessageSchema,
+  ServerMessageSchema,
   SYNCFORGE_PROTOCOL_VERSION,
+  bytesToBase64,
+  base64ToBytes,
 } from '../index.js';
+
+describe('Binary conversion utilities', () => {
+  it('should roundtrip arbitrary byte arrays losslessly', () => {
+    const original = new Uint8Array([0, 1, 2, 255, 128, 64, 32, 16, 8, 4, 2, 1]);
+    const encoded = bytesToBase64(original);
+    const decoded = base64ToBytes(encoded);
+
+    expect(decoded.length).toBe(original.length);
+    for (let i = 0; i < original.length; i++) {
+      expect(decoded[i]).toBe(original[i]);
+    }
+  });
+
+  it('should handle empty byte arrays', () => {
+    const empty = new Uint8Array(0);
+    const encoded = bytesToBase64(empty);
+    const decoded = base64ToBytes(encoded);
+    expect(decoded.length).toBe(0);
+  });
+});
 
 describe('RoomIdSchema validation', () => {
   it('should accept valid room IDs', () => {
@@ -47,19 +70,20 @@ describe('UserPresenceSchema validation', () => {
 });
 
 describe('ClientMessageSchema discriminated union', () => {
-  it('should validate hello message', () => {
-    const hello = {
-      type: 'hello',
+  it('should validate init message', () => {
+    const init = {
+      type: 'init',
       protocolVersion: SYNCFORGE_PROTOCOL_VERSION,
       clientId: 'client-1',
+      token: 'dev_test_token',
     };
-    const result = ClientMessageSchema.safeParse(hello);
+    const result = ClientMessageSchema.safeParse(init);
     expect(result.success).toBe(true);
   });
 
-  it('should reject hello message with outdated protocol version', () => {
+  it('should reject init message with outdated protocol version', () => {
     const outdated = {
-      type: 'hello',
+      type: 'init',
       protocolVersion: '0.0.1',
       clientId: 'client-1',
     };
@@ -67,13 +91,35 @@ describe('ClientMessageSchema discriminated union', () => {
     expect(result.success).toBe(false);
   });
 
-  it('should validate join_room message', () => {
+  it('should validate join_room message with stateVector', () => {
     const join = {
       type: 'join_room',
       roomId: 'project-canvas-1',
+      stateVector: bytesToBase64(new Uint8Array([1, 2, 3])),
     };
     const result = ClientMessageSchema.safeParse(join);
     expect(result.success).toBe(true);
+  });
+
+  it('should validate doc_update message with binary payload', () => {
+    const docUpdate = {
+      type: 'doc_update',
+      roomId: 'project-canvas-1',
+      update: bytesToBase64(new Uint8Array([4, 5, 6])),
+      messageId: 'msg-123',
+    };
+    const result = ClientMessageSchema.safeParse(docUpdate);
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject doc_update message exceeding size limits', () => {
+    const oversized = {
+      type: 'doc_update',
+      roomId: 'project-canvas-1',
+      update: 'a'.repeat(8 * 1024 * 1024), // > 7MB base64
+    };
+    const result = ClientMessageSchema.safeParse(oversized);
+    expect(result.success).toBe(false);
   });
 
   it('should reject unrecognized message type', () => {
@@ -83,5 +129,29 @@ describe('ClientMessageSchema discriminated union', () => {
     };
     const result = ClientMessageSchema.safeParse(unknown);
     expect(result.success).toBe(false);
+  });
+});
+
+describe('ServerMessageSchema discriminated union', () => {
+  it('should validate init_ack message', () => {
+    const ack = {
+      type: 'init_ack',
+      protocolVersion: SYNCFORGE_PROTOCOL_VERSION,
+      connectionId: 'conn-abc-123',
+      authenticated: true,
+      userId: 'usr-1',
+      serverTime: Date.now(),
+    };
+    expect(ServerMessageSchema.safeParse(ack).success).toBe(true);
+  });
+
+  it('should validate doc_update_ack message', () => {
+    const ack = {
+      type: 'doc_update_ack',
+      roomId: 'room-alpha',
+      messageId: 'msg-1',
+      persisted: true,
+    };
+    expect(ServerMessageSchema.safeParse(ack).success).toBe(true);
   });
 });

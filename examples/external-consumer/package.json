@@ -1,0 +1,20 @@
+{
+  "name": "syncforge-external-consumer",
+  "version": "1.0.0",
+  "description": "Standalone reference application consuming the SyncForge TypeScript SDK via its public package API",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@syncforge/sdk": "../../packages/sdk",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
