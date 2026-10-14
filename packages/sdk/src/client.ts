@@ -185,8 +185,6 @@ export class SyncForgeClient implements RoomTransport {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public off(event: ClientEvent, listener: (...args: any[]) => void): void {
-
-
     switch (event) {
       case 'status':
       case 'stateChange':

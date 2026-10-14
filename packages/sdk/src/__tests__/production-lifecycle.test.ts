@@ -62,12 +62,11 @@ class MockWebSocket {
 describe('SyncForge SDK Production Lifecycle & Resilience', () => {
   describe('Client Configuration & Validation', () => {
     it('throws ConfigurationError when serverUrl or endpoint is missing', () => {
-      expect(
-        () => new SyncForgeClient({} as unknown as { serverUrl: string }),
-      ).toThrow(ConfigurationError);
+      expect(() => new SyncForgeClient({} as unknown as { serverUrl: string })).toThrow(
+        ConfigurationError,
+      );
       expect(() => new SyncForgeClient({ serverUrl: '' })).toThrow(ConfigurationError);
     });
-
 
     it('throws ConfigurationError when URL format is invalid', () => {
       expect(() => new SyncForgeClient({ serverUrl: 'not-a-valid-url' })).toThrow(
@@ -220,7 +219,6 @@ describe('SyncForge SDK Production Lifecycle & Resilience', () => {
 
       await client.connect();
       const socket = (client as unknown as { socket: MockWebSocket }).socket;
-
 
       const joinPromise = client.joinRoom('singleton-room');
       setTimeout(() => {

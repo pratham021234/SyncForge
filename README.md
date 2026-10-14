@@ -133,40 +133,51 @@ npm.cmd run db:status
 
 ## 6. Endpoints & Gateway
 
-The backend exposes the following standard diagnostic and real-time collaboration endpoints:
+The backend exposes the following standard diagnostic, control plane, and real-time collaboration endpoints:
 
 - `GET http://localhost:4000/healthz` — **Liveness Probe**: Returns HTTP 200 with server uptime and version.
 - `GET http://localhost:4000/readyz` — **Readiness Probe**: Verifies connectivity to PostgreSQL and Redis.
 - `GET http://localhost:4000/api/v1/info` — **Metadata**: Returns protocol version and service capabilities.
-- `WS ws://localhost:4000/ws/collaborate` — **Collaboration Gateway**: WebSocket transport for CRDT synchronization, state vector handshake, and delta update streaming.
+- `POST http://localhost:4000/api/v1/auth/register` — **Registration**: Creates user account and default organization/project.
+- `POST http://localhost:4000/api/v1/auth/login` — **Authentication**: OWASP `scrypt` verification and JWT session cookie issuance.
+- `GET/POST http://localhost:4000/api/v1/projects` — **Projects**: Multi-tenant project lifecycle management.
+- `GET/POST/DELETE http://localhost:4000/api/v1/api-keys` — **API Credentials**: Cryptographic key generation (`sf_live_sec_...`), one-time reveal, and revocation.
+- `POST http://localhost:4000/api/v1/tokens/room` — **Room Tokens**: Mint short-lived scoped JWT room tokens for client SDK connections.
+- `GET http://localhost:4000/api/v1/usage` — **Usage & Metering**: Query real-time concurrent connections and daily metric aggregates.
+- `WS ws://localhost:4000/ws/collaborate` — **Collaboration Gateway**: WebSocket transport for CRDT synchronization, state vector handshake, and delta update streaming with project namespace enforcement.
 
 ---
 
-## 7. Current Implementation Status (Phase 3)
+## 7. Current Implementation Status (Phase 4)
 
-| Component                     | Status    | Details                                                                                 |
-| :---------------------------- | :-------- | :-------------------------------------------------------------------------------------- |
-| **Monorepo & Workspaces**     | Completed | Clean npm-workspaces setup with shared tsconfig, linting, formatting                    |
-| **Shared Protocol**           | Completed | `@syncforge/shared` with Zod validation, close codes, binary base64 conversion          |
-| **Canvas Document Schema**    | Completed | Zod schemas and validation for nodes, positions, custom node data, and edges            |
-| **Production Client SDK**     | Completed | `@syncforge/sdk` dual ESM/CJS bundles, standalone zero-monorepo dependency packaging    |
-| **Dynamic Auth & Events**     | Completed | Dynamic `getToken` async resolution, typed `.on()`/`.off()` events, error hierarchy     |
-| **React 19 Integration**      | Completed | `@syncforge/sdk/react` with `<SyncForgeProvider>`, StrictMode-safe `useSyncForgeRoom`   |
-| **External Consumer Fixture** | Completed | Standalone example in `examples/external-consumer/` consuming public package interface  |
-| **Canvas Adapter & Undo**     | Completed | `SyncForgeCanvasAdapter` with atomic graph ops and scoped undo/redo isolating peers     |
-| **Fastify Gateway**           | Completed | Strict CORS, Pino logging, correlation IDs, `/healthz`, `/readyz`, & `/ws/collaborate`  |
-| **Collaboration Engine**      | Completed | Yjs CRDT engine, state vectors, delta streaming, single-flight room lifecycle, eviction |
-| **Durable Persistence**       | Completed | Append-only `document_updates` and compacted `document_snapshots` in PostgreSQL (BYTEA) |
-| **Reconnection Recovery**     | Completed | Automatic state-vector delta reconciliation on network reconnection with zero data loss |
-| **Collaborative Canvas**      | Completed | Interactive workspace at `/rooms/[roomId]` powered by `@xyflow/react` and SDK adapter   |
-| **Presence & Live Cursors**   | Completed | Real-time pointer awareness, throttled broadcasts, participant avatars & roster         |
-| **Testing & CI**              | Completed | 75 Vitest unit, adapter, lifecycle, packaging, and multi-client integration tests       |
+| Component                     | Status    | Details                                                                                            |
+| :---------------------------- | :-------- | :------------------------------------------------------------------------------------------------- |
+| **Monorepo & Workspaces**     | Completed | Clean npm-workspaces setup with shared tsconfig, linting, formatting                               |
+| **Shared Protocol**           | Completed | `@syncforge/shared` with Zod validation, close codes, binary base64 conversion                     |
+| **Canvas Document Schema**    | Completed | Zod schemas and validation for nodes, positions, custom node data, and edges                       |
+| **Production Client SDK**     | Completed | `@syncforge/sdk` dual ESM/CJS bundles, standalone zero-monorepo dependency packaging               |
+| **Dynamic Auth & Events**     | Completed | Dynamic `getToken` async resolution, typed `.on()`/`.off()` events, error hierarchy                |
+| **React 19 Integration**      | Completed | `@syncforge/sdk/react` with `<SyncForgeProvider>`, StrictMode-safe `useSyncForgeRoom`              |
+| **External Consumer Fixture** | Completed | Standalone example in `examples/external-consumer/` consuming public package interface             |
+| **Canvas Adapter & Undo**     | Completed | `SyncForgeCanvasAdapter` with atomic graph ops and scoped undo/redo isolating peers                |
+| **Fastify Gateway**           | Completed | Strict CORS, Pino logging, correlation IDs, `/healthz`, `/readyz`, & `/ws/collaborate`             |
+| **Collaboration Engine**      | Completed | Yjs CRDT engine, state vectors, delta streaming, single-flight room lifecycle, eviction            |
+| **Durable Persistence**       | Completed | Append-only `document_updates` and compacted `document_snapshots` in PostgreSQL (BYTEA)            |
+| **Reconnection Recovery**     | Completed | Automatic state-vector delta reconciliation on network reconnection with zero data loss            |
+| **Collaborative Canvas**      | Completed | Interactive workspace at `/rooms/[roomId]` powered by `@xyflow/react` and SDK adapter              |
+| **Presence & Live Cursors**   | Completed | Real-time pointer awareness, throttled broadcasts, participant avatars & roster                    |
+| **Identity & Access Control** | Completed | `scrypt` password hashing, timing-safe checks, expiring reset tokens, JWT auth cookies             |
+| **Multi-Tenant Isolation**    | Completed | Scoped organizations, projects, memberships (owner/admin/member/viewer)                            |
+| **Two-Tier API Credentials**  | Completed | Server secret keys (`sf_live_sec_...` / `sf_dev_sec_...`) with one-time reveal; client room tokens |
+| **Usage Metering Engine**     | Completed | Real-time connection tracking, daily byte/action aggregation, plan limit enforcement               |
+| **Developer Console UI**      | Completed | Full 5-tab dashboard (`/dashboard`) with Overview, Projects, API Keys, Usage, Settings             |
+| **Testing & CI**              | Completed | 89 Vitest unit, adapter, lifecycle, packaging, and multi-tenant isolation tests                    |
 
 ---
 
 ## 8. Planned Next Phase
 
-The next scheduled milestone is **Phase 4: Multi-Server Clustering & Redis Coordination**:
+The next scheduled milestone is **Phase 5: Multi-Server Clustering & Redis Coordination**:
 
 - Cross-node pub/sub propagation of binary CRDT updates using Redis channels.
 - Distributed sliding-window rate limiting per API key.

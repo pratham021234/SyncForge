@@ -13,11 +13,14 @@ import { RoomManager } from '../engine/room-manager.js';
 import { AuthService, AuthContext } from '../services/auth.service.js';
 import { DocumentEngine } from '../engine/document-manager.js';
 
+import { UsageService } from '../services/usage.service.js';
+
 export interface GatewayOptions {
   maxMessageSizeBytes?: number;
   maxUpdatesPerSecond?: number;
   maxRoomsPerConnection?: number;
   heartbeatIntervalMs?: number;
+  usageService?: UsageService;
 }
 
 export class WebSocketSession {
@@ -71,6 +74,7 @@ export function registerCollaborationGateway(
   const maxUpdatesPerSec = options.maxUpdatesPerSecond ?? 120; // 120 updates/sec
   const maxRoomsPerConn = options.maxRoomsPerConnection ?? 20;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 30000;
+  const usageService = options.usageService ?? new UsageService();
 
   const activeSessions = new Map<string, WebSocketSession>();
 
@@ -161,7 +165,27 @@ export function registerCollaborationGateway(
             case 'init': {
               try {
                 const authContext = await authService.authenticate(message.token, message.clientId);
+
+                // Enforce project concurrent connection limits
+                const limitCheck = await usageService.checkPlanLimits(authContext.projectId);
+                if (!limitCheck.allowed) {
+                  session.send({
+                    type: 'error',
+                    code: SYNCFORGE_ERROR_CODES.ROOM_CAPACITY_EXCEEDED,
+                    message:
+                      limitCheck.reason ?? 'Project plan concurrent connection limit exceeded',
+                    timestamp: new Date().toISOString(),
+                  });
+                  session.socket.close(
+                    SYNCFORGE_WS_CLOSE_CODES.POLICY_VIOLATION,
+                    'Plan connection limit exceeded',
+                  );
+                  return;
+                }
+
                 session.authContext = authContext;
+                usageService.recordConnection(authContext.projectId).catch(() => {});
+
                 session.send({
                   type: 'init_ack',
                   protocolVersion: '1.0.0',
@@ -236,6 +260,7 @@ export function registerCollaborationGateway(
                 send: (msg) => session.send(msg),
               });
               session.joinedRooms.add(message.roomId);
+              usageService.recordRoomJoin(session.authContext.projectId).catch(() => {});
 
               // Encode server state vector for two-way sync
               const serverStateVector = DocumentEngine.encodeStateVector(room.doc);
@@ -328,6 +353,11 @@ export function registerCollaborationGateway(
               const messageId = 'messageId' in message ? message.messageId : undefined;
 
               await room.applyClientUpdate(updateBytes, session.connectionId, messageId);
+              if (session.authContext?.projectId) {
+                usageService
+                  .recordDocUpdateBytes(session.authContext.projectId, updateBytes.length)
+                  .catch(() => {});
+              }
               break;
             }
 
@@ -378,6 +408,10 @@ export function registerCollaborationGateway(
           { connId: session.connectionId, code, reason: reason.toString() },
           '[Gateway] WebSocket connection closed',
         );
+
+        if (session.authContext?.projectId) {
+          usageService.recordConnectionClose(session.authContext.projectId);
+        }
 
         // Clean up connection from all joined rooms
         for (const roomId of session.joinedRooms) {

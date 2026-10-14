@@ -5,16 +5,33 @@ import crypto from 'crypto';
 import { env } from './config/env.js';
 import { healthRoutes } from './routes/health.js';
 import { infoRoutes } from './routes/api/v1/info.js';
+import { authRoutes } from './routes/api/v1/auth.js';
+import { organizationRoutes } from './routes/api/v1/organizations.js';
+import { projectRoutes } from './routes/api/v1/projects.js';
+import { apiKeyRoutes } from './routes/api/v1/api-keys.js';
+import { tokenRoutes } from './routes/api/v1/tokens.js';
+import { usageRoutes } from './routes/api/v1/usage.js';
 import { AppError } from './errors/app-error.js';
 import { RoomManager } from './engine/room-manager.js';
 import { PersistenceService } from './services/persistence.service.js';
 import { AuthService } from './services/auth.service.js';
+import { AuthManagerService } from './services/auth-manager.service.js';
+import { OrganizationService } from './services/organization.service.js';
+import { ProjectService } from './services/project.service.js';
+import { ApiKeyService } from './services/api-key.service.js';
+import { UsageService } from './services/usage.service.js';
 import { registerCollaborationGateway, WebSocketSession } from './gateway/collaboration.gateway.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     roomManager: RoomManager;
     persistenceService: PersistenceService;
+    authService: AuthService;
+    authManagerService: AuthManagerService;
+    organizationService: OrganizationService;
+    projectService: ProjectService;
+    apiKeyService: ApiKeyService;
+    usageService: UsageService;
     gateway: {
       sessions: Map<string, WebSocketSession>;
       broadcastShutdown: () => void;
@@ -27,6 +44,11 @@ export interface BuildAppOptions {
   persistenceService?: PersistenceService;
   roomManager?: RoomManager;
   authService?: AuthService;
+  authManagerService?: AuthManagerService;
+  organizationService?: OrganizationService;
+  projectService?: ProjectService;
+  apiKeyService?: ApiKeyService;
+  usageService?: UsageService;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -42,6 +64,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
             'req.headers.cookie',
             'body.password',
             'body.apiKey',
+            'body.secretKey',
           ],
         },
     genReqId: (req) => {
@@ -63,17 +86,30 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
   });
 
-  // Initialize collaboration services
+  // Initialize services
   const persistenceService = options.persistenceService ?? new PersistenceService();
   const roomManager = options.roomManager ?? new RoomManager(persistenceService);
-  const authService = options.authService ?? new AuthService();
+  const apiKeyService = options.apiKeyService ?? new ApiKeyService();
+  const authService = options.authService ?? new AuthService(undefined, apiKeyService);
+  const authManagerService = options.authManagerService ?? new AuthManagerService();
+  const organizationService = options.organizationService ?? new OrganizationService();
+  const projectService = options.projectService ?? new ProjectService();
+  const usageService = options.usageService ?? new UsageService();
 
   // Register collaboration WebSocket gateway
-  const gateway = registerCollaborationGateway(app, roomManager, authService);
+  const gateway = registerCollaborationGateway(app, roomManager, authService, {
+    usageService,
+  });
 
   // Attach services to Fastify instance
   app.decorate('roomManager', roomManager);
   app.decorate('persistenceService', persistenceService);
+  app.decorate('authService', authService);
+  app.decorate('authManagerService', authManagerService);
+  app.decorate('organizationService', organizationService);
+  app.decorate('projectService', projectService);
+  app.decorate('apiKeyService', apiKeyService);
+  app.decorate('usageService', usageService);
   app.decorate('gateway', gateway);
 
   // CORS configuration
@@ -166,6 +202,28 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   // Register routes
   app.register(healthRoutes);
   app.register(infoRoutes, { prefix: '/api/v1' });
+  app.register(authRoutes, { prefix: '/api/v1', authManagerService });
+  app.register(organizationRoutes, {
+    prefix: '/api/v1',
+    orgService: organizationService,
+    authManagerService,
+  });
+  app.register(projectRoutes, {
+    prefix: '/api/v1',
+    projectService,
+    authManagerService,
+  });
+  app.register(apiKeyRoutes, {
+    prefix: '/api/v1',
+    apiKeyService,
+    authManagerService,
+  });
+  app.register(tokenRoutes, { prefix: '/api/v1', apiKeyService });
+  app.register(usageRoutes, {
+    prefix: '/api/v1',
+    usageService,
+    authManagerService,
+  });
 
   return app;
 }

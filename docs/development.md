@@ -322,3 +322,74 @@ Verify what files would be packaged for npm publication without actually publish
 ```cmd
 npm.cmd run package:inspect --workspace=@syncforge/sdk
 ```
+
+---
+
+## 10. Developer Console, Authentication & Multi-Tenant Control Plane
+
+SyncForge includes a complete developer control plane for multi-tenant isolation, project management, API credentials, and real-time usage metering.
+
+### 10.1 Running the Developer Console
+
+1. Start both the server and web application:
+   ```cmd
+   npm.cmd run dev
+   ```
+2. Open your browser and navigate to `http://localhost:3000/register`.
+3. Register a developer account:
+   - Provide an email (e.g. `engineer@example.com`) and a secure password (min 8 chars).
+   - SyncForge will automatically generate your default Organization (`Personal Workspace`), a default Project (`Default App`), and your first Secret API Key (`sf_dev_sec_...`).
+4. You are automatically redirected to `http://localhost:3000/dashboard`.
+
+### 10.2 Developer Console Navigation
+
+The developer dashboard provides five functional tabs:
+
+- **Overview:** Displays active projects count, API keys count, 24-hour connected client metrics, and quick start guides.
+- **Projects:** Create new projects with custom slugs, inspect project IDs, and delete projects (with slug confirmation).
+- **API Credentials:** Generate scoped server-side Secret API Keys (`sf_live_sec_...` or `sf_dev_sec_...`). Keys are revealed **once** upon creation with an interactive copy dialog. View prefix, creation date, and revoke active keys.
+- **Usage & Metering:** Inspect real-time and aggregate usage metrics against plan quotas (Active Connections, Monthly Active Rooms, Peak Bandwidth, Storage).
+- **Settings:** Manage organization name and profile configuration.
+
+### 10.3 Minting Room Tokens via Backend Server
+
+Client applications should never hold your server-side Secret API Key. Instead, mint short-lived Room Tokens from your backend:
+
+```cmd
+curl -X POST http://localhost:4000/api/v1/tokens/room ^
+  -H "Authorization: Bearer sf_dev_sec_YOUR_KEY_HERE" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"projectId\":\"YOUR_PROJECT_ID\",\"roomId\":\"collab-board-1\",\"userId\":\"user-123\",\"role\":\"editor\",\"ttlSeconds\":3600}"
+```
+
+Returns:
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresAt": "2026-10-13T18:00:00.000Z",
+  "projectId": "YOUR_PROJECT_ID",
+  "roomId": "collab-board-1"
+}
+```
+
+The resulting token can be passed into the client SDK:
+
+```typescript
+const client = new SyncForgeClient({
+  endpoint: 'ws://localhost:4000/ws/collaborate',
+  getToken: async () => token,
+});
+```
+
+### 10.4 Running Control Plane Tests
+
+To verify multi-tenant isolation, cryptographic password hashing, API credential validation, and usage metering:
+
+```cmd
+# Run control-plane specific integration tests
+npx vitest run apps/server/src/__tests__/auth-control-plane.test.ts
+npx vitest run apps/server/src/__tests__/multi-tenant-isolation.test.ts
+npx vitest run apps/server/src/__tests__/websocket-project-auth.test.ts
+npx vitest run apps/server/src/__tests__/usage-metering.test.ts
+```

@@ -381,3 +381,33 @@ To prevent storing long-lived credentials in client bundles, `SyncForgeClient` a
 ### 9.3 React 19 Integration & StrictMode Resilience
 
 The subpath export `@syncforge/sdk/react` provides `<SyncForgeProvider>`, `useSyncForgeRoom`, `useSyncForgePresence`, and `useSyncForgeStatus`. `useSyncForgeRoom` tracks component mount lifecycles with internal refs, guaranteeing that React 19 StrictMode double-mounting does not leak room subscriptions or duplicate WebSocket traffic.
+
+---
+
+## 10. Production Control Plane, Multi-Tenancy & Metering Architecture (Phase 4)
+
+### 10.1 Multi-Tenant Hierarchy
+
+SyncForge enforces a strict relational data hierarchy:
+
+```
+Organization (Workspace / Tenant)
+└── Organization Memberships (owner, admin, member, viewer)
+    └── Projects (development, production environments, plan quotas)
+        ├── Project API Keys (hashed secrets with prefixes sf_live_sec_ / sf_test_sec_)
+        ├── Room Namespaces (strictly isolated by project_id)
+        ├── Usage Events & Daily Aggregates (connections, room_joins, doc_update_bytes)
+        └── Immutable Audit Logs (administrative & security history)
+```
+
+### 10.2 Cryptographic Key & Room Token Flow
+
+1. **Server Secret Key (`sf_{env}_sec_...`):** Long-lived project credential stored as a SHA-256 verifier. Revealed once upon creation; never embedded in browser client bundles.
+2. **Short-Lived Room Tokens:** Minted by the developer's server via `POST /api/v1/projects/:projectId/tokens/room` (authenticated by `x-api-key`). Signs a compact HMAC-SHA256 JWT containing `{ projectId, roomId, userId, role, exp }`.
+3. **Client WebSocket Authentication:** Client passes the short-lived room token to `ws/collaborate`. The collaboration gateway verifies the signature, enforces plan concurrency limits, and restricts room subscriptions strictly to the token's authorized project and room claims.
+
+### 10.3 Real-Time Usage Accounting & Plan Enforcement
+
+- **Auditable Metering:** Metering events (`connections`, `room_joins`, `doc_update_bytes`) are recorded directly from verified server-observed events. Unauthenticated or rejected operations are excluded.
+- **Daily Aggregation:** High-resolution event streams are upserted into `usage_daily_aggregates` for instant dashboard queries without expensive unbounded table scans.
+- **Concurrency Enforcement:** Active connections are tracked in atomic concurrency gauges. If a project reaches its plan limit (e.g. 50 on Free, 500 on Pro), subsequent connection handshakes are rejected with `4003 / ROOM_CAPACITY_EXCEEDED`.

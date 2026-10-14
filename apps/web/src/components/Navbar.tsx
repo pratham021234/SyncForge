@@ -2,11 +2,23 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Terminal, Layers, BookOpen, LayoutDashboard, Radio } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+import {
+  Terminal,
+  Layers,
+  BookOpen,
+  LayoutDashboard,
+  Radio,
+  LogIn,
+  LogOut,
+  User,
+} from 'lucide-react';
 
 export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, logout } = useAuth();
 
   const navItems = [
     { href: '/', label: 'Overview', icon: Layers },
@@ -14,6 +26,11 @@ export function Navbar() {
     { href: '/rooms', label: 'Rooms', icon: Radio },
     { href: '/docs', label: 'Documentation', icon: BookOpen },
   ];
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur-md">
@@ -26,7 +43,7 @@ export function Navbar() {
             <span className="text-white font-bold">SyncForge</span>
           </Link>
           <span className="hidden sm:inline-flex items-center rounded-full bg-cyan-950/60 px-2.5 py-0.5 text-xs font-medium text-cyan-400 border border-cyan-800/40">
-            Phase 2 Live Canvas
+            Control Plane
           </span>
         </div>
 
@@ -52,6 +69,33 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
+          {user ? (
+            <div className="flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 rounded-full bg-surface border border-border px-3 py-1 text-xs text-slate-300">
+                <User className="h-3.5 w-3.5 text-primary-400" />
+                <span className="max-w-[120px] truncate">{user.name}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:border-rose-700/60 hover:text-rose-400 transition-colors"
+                title="Sign out of developer console"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Sign Out</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Link
+                href="/login"
+                className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-slate-600 hover:text-white transition-colors"
+              >
+                <LogIn className="h-3.5 w-3.5" />
+                <span>Sign In</span>
+              </Link>
+            </div>
+          )}
+
           <a
             href="http://localhost:4000/healthz"
             target="_blank"

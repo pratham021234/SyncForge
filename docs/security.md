@@ -77,10 +77,8 @@ This document establishes the security baseline for SyncForge, details implement
 
 1. **Production Token Cryptography (Targeted Phase 4):**
    - Phase 1 implements token extraction and validation via `AuthService`. Cryptographic public key verification and self-serve dashboard key revocation are scheduled for Phase 4.
-2. **Distributed Redis Rate Limiting (Targeted Phase 3):**
-   - Current rate limiting is tracked per server instance in memory. Cluster-wide distributed sliding window limiting via Redis will be introduced in Phase 3.
-3. **Audit Logging (Targeted Phase 4):**
-   - Administrative auditing for workspace changes and key generation will accompany the Phase 4 developer dashboard.
+2. **Distributed Redis Rate Limiting (Phase 5):**
+   - Cluster-wide distributed sliding window limiting via Redis will be introduced during multi-node cluster scaling.
 
 ---
 
@@ -92,7 +90,26 @@ This document establishes the security baseline for SyncForge, details implement
 
 ---
 
-## 5. Pre-Deployment Verification Checklist
+## 5. Multi-Tenant Identity, Authentication & Room Authorization (Phase 4)
+
+1. **Password Hashing (OWASP Compliant):**
+   - User passwords are encrypted using native Node.js `scrypt` with a cryptographically secure 16-byte random salt (`N=16384`, `r=8`, `p=1`).
+   - Constant-time verification (`crypto.timingSafeEqual`) prevents timing attack side-channels.
+2. **Single-Use Password Reset Tokens:**
+   - Password reset tokens are generated as 32-byte high-entropy values.
+   - Raw tokens are never stored; only their SHA-256 digests are stored with strict 1-hour expirations and single-use invalidation (`used_at IS NOT NULL`).
+3. **Two-Tier Credential Hierarchy:**
+   - **Secret API Keys (`sf_{env}_sec_...`):** Restricted strictly to backend servers. Used to authenticate server-to-server operations and mint room tokens. Revealed exactly once upon creation.
+   - **Short-Lived Scoped Room Tokens:** Browser clients receive short-lived HMAC-SHA256 JWTs containing explicit `{ projectId, roomId, userId, role, exp }` claims.
+4. **Room Namespace & Cross-Tenant Isolation:**
+   - Collaboration rooms are strictly scoped to project namespaces.
+   - If a client authenticated under Project A attempts to join a room associated with Project B, the WebSocket gateway immediately rejects the join with close code `4003 / UNAUTHORIZED` ("Room belongs to another project namespace").
+5. **Auditing & Security Visibility:**
+   - All credential generation, revocation, project creation/deletion, and role modifications produce immutable audit logs in `audit_logs` storing actor, action, timestamp, and client IP without leaking sensitive secrets or payload contents.
+
+---
+
+## 6. Pre-Deployment Verification Checklist
 
 Before deploying SyncForge to production environments:
 

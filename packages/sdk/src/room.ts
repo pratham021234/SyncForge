@@ -156,7 +156,6 @@ export class SyncForgeRoom implements RoomSession {
   public on(event: 'error', listener: (err: Error) => void): UnsubscribeFn;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public on(event: RoomEvent, listener: (...args: any[]) => void): UnsubscribeFn {
-
     switch (event) {
       case 'status': {
         const fn = listener as (status: RoomStatus) => void;
@@ -188,7 +187,6 @@ export class SyncForgeRoom implements RoomSession {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public off(event: RoomEvent, listener: (...args: any[]) => void): void {
-
     switch (event) {
       case 'status':
         this.statusListeners.delete(listener as RoomStatusListener);

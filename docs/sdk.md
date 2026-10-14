@@ -247,3 +247,69 @@ Run the demo against a running local server:
 ```powershell
 npx tsx examples/external-consumer/src/index.ts
 ```
+
+---
+
+## 8. Two-Tier Authentication Architecture
+
+SyncForge employs a secure two-tier credential model to prevent secret key leakage:
+
+### Tier 1: Server-Side Secret API Key (`sf_live_sec_...` / `sf_dev_sec_...`)
+
+- Kept strictly confidential on your backend servers (Node.js, Next.js API routes, Python, Go, etc.).
+- Revealed only once upon creation in the Developer Console.
+- Never exposed in frontend client bundles.
+- Used to mint short-lived Room Tokens for specific users and projects.
+
+### Tier 2: Short-Lived Scoped Room Tokens
+
+- Signed JWTs with strict time-to-live (`ttlSeconds`, e.g., 3600 seconds).
+- Scoped to a specific `projectId`, `roomId`, `userId`, and `role` (`editor` or `viewer`).
+- Verified during the WebSocket connection handshake.
+- If a client attempts to connect to or join a room outside of their token's scoped project, the connection is rejected with close code `4003` (`Forbidden: cross-project room access denied`).
+
+#### Backend Minting Example (Next.js / Node.js):
+
+```typescript
+// pages/api/collab-token.ts (or app/api/collab-token/route.ts)
+export async function POST(req: Request) {
+  const { roomId, userId } = await req.json();
+
+  const response = await fetch('http://localhost:4000/api/v1/tokens/room', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.SYNCFORGE_SECRET_KEY}`, // sf_live_sec_...
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      projectId: process.env.SYNCFORGE_PROJECT_ID,
+      roomId,
+      userId,
+      role: 'editor',
+      ttlSeconds: 3600,
+    }),
+  });
+
+  const data = await response.json();
+  return Response.json({ token: data.token });
+}
+```
+
+#### Frontend Client SDK Configuration:
+
+```typescript
+import { SyncForgeClient } from '@syncforge/sdk';
+
+const client = new SyncForgeClient({
+  endpoint: 'ws://localhost:4000/ws/collaborate',
+  getToken: async () => {
+    const res = await fetch('/api/collab-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: 'architecture-board', userId: 'usr_42' }),
+    });
+    const { token } = await res.json();
+    return token;
+  },
+});
+```
